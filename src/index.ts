@@ -1,4 +1,5 @@
 import * as nbt from "prismarine-nbt";
+import {parseLitematic, Litematic} from "./litematic"
 
 async function startConversion(file: File){
     const arrBuffer = await file.arrayBuffer();
@@ -23,7 +24,8 @@ async function startConversion(file: File){
 
     switch(fileType){
         case "litematic":
-
+            var schematic = parsed.parsed as Litematic; // this probably isnt the best way to do this, but it works and if it doesn't then I need to find a new way to detect litematics
+            parseLitematic(schematic);
         break;
         case "schematica":
 

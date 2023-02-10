@@ -1,6 +1,6 @@
 import * as NBT from "prismarine-nbt";
 
-interface Litematic extends NBT.NBT {
+export interface Litematic extends NBT.NBT {
     value: {
         Metadata: {
             type: NBT.TagType.Compound,
@@ -51,7 +51,10 @@ interface Litematic extends NBT.NBT {
             type: NBT.TagType.Int
             value: number
         }
-        Regions: Record<string, LitematicRegion>
+        Regions: {
+            type: NBT.TagType.Compound
+            value: Record<string, LitematicRegion>
+        }
         Version: {
             type: NBT.TagType.Int
             value: number
@@ -62,7 +65,7 @@ interface Litematic extends NBT.NBT {
 interface LitematicRegion extends NBT.NBT {
     type: NBT.TagType.Compound
     value: {
-        BlockStatePallete: {
+        BlockStatePalette: {
             type: NBT.TagType.List
             value: {
                 type: NBT.TagType.Compound
@@ -104,11 +107,41 @@ interface LitematicRegion extends NBT.NBT {
     }
 }
 
-export default async function parseLitematic(litematic: Litematic){
+export async function parseLitematic(litematic: Litematic){
     // for now we only parse the first region, this is subject to change as my understanding of the Litematic format expands
-    let regions = litematic
+    let regions = Object.keys(litematic.value.Regions.value);
+    let blockStates: Record<string, Array<number>> | any /* TODO: remove this any */ = {};
+    
+    regions.forEach( (region) => {
+        blockStates[region] = parseBlockStates(litematic.value.Regions.value[region]);
+    })
 }
 
-function parseBlockStates(states: LitematicRegion){
+function parseBlockStates(region: LitematicRegion){
+    let blockStates = region.value.BlockStates.value;
 
+    let fullBinary = "";
+
+    // time to parse the bit array
+    blockStates.forEach( (long) => {
+        long.forEach( (number) => {
+            let bin = (number >>> 0).toString(2) // binary
+            bin = bin.padStart(32, "0");
+            
+            fullBinary+=bin;
+        })
+    })
+    // split based on palette bit length
+    let paletteSize = region.value.BlockStatePalette.value.value.length
+    let paletteSizeBits = (paletteSize - 1).toString(2).length;
+    let statesBits: Array<string> = fullBinary.match(new RegExp(`.{1,${paletteSizeBits}}`, "g"));
+
+    // get max length of the schematic
+    let maxLength = Math.abs(region.value.Size.value.x.value * region.value.Size.value.y.value * region.value.Size.value.z.value);
+    statesBits = statesBits.slice(0, maxLength-1);
+
+
+    let statesInts: Array<number> = statesBits.map( (v) => parseInt(v, 2));
+
+    return statesInts
 }
