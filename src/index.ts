@@ -1,5 +1,6 @@
 import * as nbt from "prismarine-nbt";
 import {parseLitematic, Litematic} from "./litematic"
+import { schematicReader } from "./schematicController";
 
 async function startConversion(file: File){
     const arrBuffer = await file.arrayBuffer();
@@ -11,9 +12,9 @@ async function startConversion(file: File){
     // figure out what type of file we're working with here
     let fileType: "unknown" | "litematic" | "vanilla" | "schematica" = "unknown";
 
-    if(verifyLitematic(parsed.parsed)) fileType = "litematic";
-    if(verifySchematica(parsed.parsed)) fileType = "schematica";
-    if(verifyVanilla(parsed.parsed)) fileType = "vanilla";
+    if(isLitematicaSchematic(parsed.parsed)) fileType = "litematic";
+    if(isSchematicaSchematic(parsed.parsed)) fileType = "schematica";
+    if(isVanillaSchematic(parsed.parsed)) fileType = "vanilla";
     console.log(`Found a ${fileType} schematic in ${file.name}`);
     
     // if the file type is still unknown, exit here and tell the user that their file is unsupported.
@@ -22,10 +23,12 @@ async function startConversion(file: File){
         return;
     }
 
+    let reader: schematicReader;
+
     switch(fileType){
         case "litematic":
             var schematic = parsed.parsed as Litematic; // this probably isnt the best way to do this, but it works and if it doesn't then I need to find a new way to detect litematics
-            parseLitematic(schematic);
+            reader = parseLitematic(schematic);
         break;
         case "schematica":
 
@@ -34,9 +37,13 @@ async function startConversion(file: File){
 
         break;
     }
+
+    for(let i = 0; i < reader.sizeY; i++){
+        console.log(reader.getBlockAt(0, i, 0));
+    }
 }
 
-function verifyLitematic(possibleLitematic: nbt.NBT): boolean {
+function isLitematicaSchematic(possibleLitematic: nbt.NBT): possibleLitematic is Litematic {
     /*
         Litematics have regions, which no other schematic format (to my knowledge) has. So we just check if the Regions compound exists. If it does, its a litematic!
     */
@@ -45,7 +52,7 @@ function verifyLitematic(possibleLitematic: nbt.NBT): boolean {
     } else return false;
 }
 
-function verifyVanilla(possibleVanilla: nbt.NBT): boolean {
+function isVanillaSchematic(possibleVanilla: nbt.NBT): boolean {
     /*
         Vanilla schematics have a few unique attributes, the one im choosing to check for is DataVersion
     */
@@ -54,7 +61,7 @@ function verifyVanilla(possibleVanilla: nbt.NBT): boolean {
     } else return false;
 }
 
-function verifySchematica(possibleSchematica: nbt.NBT): boolean {
+function isSchematicaSchematic(possibleSchematica: nbt.NBT): boolean {
     /*
         Schematica schematics have the Materials attribute, which no other formats have, so we check for that.
     */

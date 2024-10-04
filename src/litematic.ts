@@ -1,4 +1,5 @@
 import * as NBT from "prismarine-nbt";
+import { LitematicReader, schematicPaletteBlock } from "./schematicController";
 
 export interface Litematic extends NBT.NBT {
     value: {
@@ -107,41 +108,81 @@ interface LitematicRegion extends NBT.NBT {
     }
 }
 
-export async function parseLitematic(litematic: Litematic){
-    // for now we only parse the first region, this is subject to change as my understanding of the Litematic format expands
+export interface litematicData {
+    states: Array<number>
+    statePallete: Array<schematicPaletteBlock>
+    size: {
+        x: number,
+        y: number,
+        z: number
+    }
+}
+
+export function parseLitematic(litematic: Litematic): LitematicReader {
     let regions = Object.keys(litematic.value.Regions.value);
-    let blockStates: Record<string, Array<number>> | any /* TODO: remove this any */ = {};
+    let blockStates: Record<string, Array<number>> = {};
     
     regions.forEach( (region) => {
         blockStates[region] = parseBlockStates(litematic.value.Regions.value[region]);
     })
+
+    // TODO: allow the user to select which region they want to build
+    // for now, we'll just use the first one
+    let size = litematic.value.Regions.value[regions[0]].value.Size.value;
+    let data: litematicData = {
+        states: blockStates[regions[0]],
+        statePallete: litematic.value.Regions.value[regions[0]].value.BlockStatePalette.value.value
+        .map( (block) => {
+            return {"Name": block.Name.value, "Properties": block.Properties?.value}
+        }),
+        size: {
+            x: Math.abs(size.x.value),
+            y: Math.abs(size.y.value),
+            z: Math.abs(size.z.value)
+        }
+    }
+
+    return new LitematicReader(data);
 }
 
 function parseBlockStates(region: LitematicRegion){
     let blockStates = region.value.BlockStates.value;
 
-    let fullBinary = "";
+    // parsing the bit array
+    // this is going to be hell
 
-    // time to parse the bit array
-    blockStates.forEach( (long) => {
-        long.forEach( (number) => {
-            let bin = (number >>> 0).toString(2) // binary
-            bin = bin.padStart(32, "0");
-            
-            fullBinary+=bin;
-        })
-    })
-    // split based on palette bit length
-    let paletteSize = region.value.BlockStatePalette.value.value.length
-    let paletteSizeBits = (paletteSize - 1).toString(2).length;
-    let statesBits: Array<string> = fullBinary.match(new RegExp(`.{1,${paletteSizeBits}}`, "g"));
+    let nbits = Math.ceil(Math.log2(region.value.BlockStatePalette.value.value.length));
+    
+    // shove everything into a bigint64 array
+    let intarr = new BigUint64Array(blockStates.length);
 
-    // get max length of the schematic
-    let maxLength = Math.abs(region.value.Size.value.x.value * region.value.Size.value.y.value * region.value.Size.value.z.value);
-    statesBits = statesBits.slice(0, maxLength-1);
+    for(let i = 0; i < blockStates.length; i++){
+        intarr[i] = ( BigInt(blockStates[i][0] >>> 0) << 32n ) + BigInt(blockStates[i][1] >>> 0);
+    }
 
+    let blocks = [];
+    let sz = region.value.Size.value;
+    let vol = Math.abs(sz.x.value) * Math.abs(sz.y.value) * Math.abs(sz.z.value);
+    let mask = (1 << nbits) - 1;
 
-    let statesInts: Array<number> = statesBits.map( (v) => parseInt(v, 2));
+    let before = performance.now();
 
-    return statesInts
+    for(let i = 0; i < vol; i++){
+        let index = (nbits * i) >> 6; // divide 64
+        let offset = BigInt(nbits * i) & (64n-1n); // mod 64
+        let inverseoffset = (64n - offset); 
+        let val = (intarr[index] >> offset) & BigInt(mask);
+
+        if(nbits + Number(offset) > 64){
+            val += (intarr[index+1] & (BigInt(mask) >> inverseoffset )) << inverseoffset;
+        }
+
+        blocks.push(Number(val));
+    }
+
+    let after = performance.now();
+    
+    console.log("Parsing block int array took " + (after-before) + "ms");
+
+    return blocks;
 }
